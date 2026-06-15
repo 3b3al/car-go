@@ -1,6 +1,6 @@
 import { useState } from "react";
-import BrandLogo from "../components/BrandLogo";
-import FormField from "../components/FormField";
+import BrandLogo from "../Components/BrandLogo";
+import FormField from "../Components/FormField";
 import { validateEmail, validatePassword } from "../utils/validator";
 
 function AuthShell({ title, children }) {
