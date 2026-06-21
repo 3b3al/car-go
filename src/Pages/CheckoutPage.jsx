@@ -3,19 +3,66 @@ import PageHeader from "../Components/PageHeader";
 import CheckoutStepper from "../Components/CheckoutStepper";
 import { Icon } from "../Components/Icon";
 import { money } from "../utils/format";
+import { orderApi, isMongoId } from "../services/api";
 
-export default function CheckoutPage({ items, onBack, onQty, onOrder }) {
+export default function CheckoutPage({ items, onBack, onQty, onOrderDone }) {
   const [method, setMethod] = useState("Mastercard");
-  const total = useMemo(() => items.reduce((sum, item) => sum + item.product.price * item.qty, 0), [items]);
+  const [placing, setPlacing] = useState(false);
+  const [orderError, setOrderError] = useState("");
+
+  const total = useMemo(
+    () => items.reduce((sum, item) => sum + item.product.price * item.qty, 0),
+    [items]
+  );
   const discount = total * 0.06;
   const finalTotal = total - discount;
+
+  const handleOrder = async () => {
+    if (items.length === 0) return;
+    setOrderError("");
+    setPlacing(true);
+    
+    // Check if any cart item is a local fallback product
+    const hasDemoProducts = items.some(item => !isMongoId(item.productId));
+    if (hasDemoProducts) {
+       // Simulate a successful order locally so the demo flow still works
+       setTimeout(() => {
+         setPlacing(false);
+         onOrderDone();
+       }, 800);
+       return;
+    }
+
+    try {
+      const payload = {
+        products: items.map((item) => ({
+          product: item.productId,
+          quantity: item.qty,
+          price: item.product.price,
+        })),
+        totalPrice: finalTotal,
+      };
+
+      await orderApi.create(payload);
+      onOrderDone();
+    } catch (err) {
+      setOrderError(err.message || "Failed to place order. Please try again.");
+    } finally {
+      setPlacing(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-white">
       <div className="relative bg-[#fff5ca] py-7">
         <PageHeader title="" onBack={onBack} />
-        <div className="-mt-20"><CheckoutStepper /></div>
+        <div className="-mt-20">
+          <CheckoutStepper />
+        </div>
       </div>
+
       <section className="mx-auto grid w-[min(1350px,calc(100%-88px))] grid-cols-[1fr_480px] gap-20 py-8 max-lg:grid-cols-1 max-sm:w-[calc(100%-32px)]">
+        {/* ── Payment method ──────────────────────────────── */}
         <div>
           <h1 className="text-2xl text-slate-500">Payment method</h1>
           <div className="mt-6 rounded bg-white p-8 shadow-[0_8px_22px_rgba(15,23,42,.18)]">
@@ -26,51 +73,110 @@ export default function CheckoutPage({ items, onBack, onQty, onOrder }) {
                 <div className="mt-5 text-sm">AL HOLDER</div>
               </div>
             </div>
+
             <div className="mx-auto mt-8 grid max-w-[560px] gap-5">
-              <label className="flex items-center justify-between text-xl">Use saved card:
-                <select value={method} onChange={(event) => setMethod(event.target.value)} className="h-10 w-64 rounded bg-slate-100 px-3">
-                  <option>Mastercard</option><option>Visa</option><option>American Express</option>
+              <label className="flex items-center justify-between text-xl">
+                Use saved card:
+                <select
+                  value={method}
+                  onChange={(e) => setMethod(e.target.value)}
+                  className="h-10 w-64 rounded bg-slate-100 px-3"
+                >
+                  <option>Mastercard</option>
+                  <option>Visa</option>
+                  <option>American Express</option>
                 </select>
               </label>
-              <input className="h-10 rounded bg-slate-100 px-4" placeholder="Name on card" defaultValue="Esther Howard" />
-              <input className="h-10 rounded bg-slate-100 px-4" placeholder="Card number" defaultValue="123-456-789-" />
+              <input
+                className="h-10 rounded bg-slate-100 px-4"
+                placeholder="Name on card"
+                defaultValue="Esther Howard"
+              />
+              <input
+                className="h-10 rounded bg-slate-100 px-4"
+                placeholder="Card number"
+                defaultValue="123-456-789-"
+              />
               <div className="grid grid-cols-2 gap-16">
                 <input className="h-10 rounded bg-slate-100 px-4" placeholder="MM / YY" />
                 <input className="h-10 rounded bg-slate-100 px-4" placeholder="CCV" />
               </div>
-              <div className="text-right text-xl font-black text-[#27489f]">VISA <span className="text-red-500">●</span><span className="text-yellow-500">●</span></div>
+              <div className="text-right text-xl font-black text-[#27489f]">
+                VISA <span className="text-red-500">●</span>
+                <span className="text-yellow-500">●</span>
+              </div>
             </div>
           </div>
         </div>
+
+        {/* ── Order summary ────────────────────────────────── */}
         <aside>
           <h2 className="text-2xl text-slate-500">Order summary</h2>
           <div className="mt-6 max-h-[300px] overflow-y-auto rounded border p-2">
             {items.map((item) => (
-              <div key={item.lineId} className="grid grid-cols-[100px_1fr_36px] gap-4 border-b py-2">
-                <img src={item.product.image} alt="" className="h-[86px] rounded bg-slate-100 object-contain p-2" />
+              <div
+                key={item.lineId}
+                className="grid grid-cols-[100px_1fr_36px] gap-4 border-b py-2"
+              >
+                <img
+                  src={item.product.image}
+                  alt=""
+                  className="h-[86px] rounded bg-slate-100 object-contain p-2"
+                />
                 <div>
                   <h3 className="text-lg font-semibold">{item.product.name}</h3>
-                  <p className="text-sm text-slate-500">{item.product.description.slice(0, 38)}</p>
+                  <p className="text-sm text-slate-500">
+                    {item.product.description?.slice(0, 38)}
+                  </p>
                   <p className="mt-3 font-bold">{money(item.product.price)}</p>
                 </div>
                 <div className="grid overflow-hidden rounded shadow">
-                  <button type="button" onClick={() => onQty(item.lineId, 1)}><Icon name="plus" /></button>
+                  <button type="button" onClick={() => onQty(item.lineId, 1)}>
+                    <Icon name="plus" />
+                  </button>
                   <span className="grid place-items-center bg-[#fff5ca]">{item.qty}</span>
-                  <button type="button" onClick={() => onQty(item.lineId, -1)}><Icon name="minus" /></button>
+                  <button type="button" onClick={() => onQty(item.lineId, -1)}>
+                    <Icon name="minus" />
+                  </button>
                 </div>
               </div>
             ))}
           </div>
+
           <div className="mt-7 space-y-5 text-2xl text-slate-600">
-            <p className="flex justify-between"><span>Product total</span><span>{money(total)}</span></p>
+            <p className="flex justify-between">
+              <span>Product total</span>
+              <span>{money(total)}</span>
+            </p>
             <hr />
-            <p className="flex justify-between"><span>Discount</span><span>%6 ({money(discount)})</span></p>
+            <p className="flex justify-between">
+              <span>Discount</span>
+              <span>%6 ({money(discount)})</span>
+            </p>
             <hr />
-            <p className="flex justify-between"><span>Delivery fee</span><span>Free</span></p>
+            <p className="flex justify-between">
+              <span>Delivery fee</span>
+              <span>Free</span>
+            </p>
             <hr />
-            <p className="flex justify-between font-bold text-[#f1cb3f]"><span>Total</span><span>{money(finalTotal)}</span></p>
+            <p className="flex justify-between font-bold text-[#f1cb3f]">
+              <span>Total</span>
+              <span>{money(finalTotal)}</span>
+            </p>
           </div>
-          <button type="button" onClick={onOrder} className="mt-8 h-16 w-full rounded bg-[#f8d858] text-2xl font-bold text-slate-700 shadow">Order</button>
+
+          {orderError && (
+            <p className="mt-4 text-center text-sm font-semibold text-red-600">{orderError}</p>
+          )}
+
+          <button
+            type="button"
+            onClick={handleOrder}
+            disabled={placing || items.length === 0}
+            className="mt-8 h-16 w-full rounded bg-[#f8d858] text-2xl font-bold text-slate-700 shadow disabled:opacity-60"
+          >
+            {placing ? "Placing Order…" : "Order"}
+          </button>
         </aside>
       </section>
     </main>

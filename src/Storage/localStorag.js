@@ -4,6 +4,7 @@ export const STORAGE_KEYS = {
   cart: "cargo_cart_v2",
   favorites: "cargo_favorites_v2",
   onboarded: "cargo_onboarded_v2",
+  token: "cargo_token_v1",
 };
 
 export function readStore(key, fallback) {
